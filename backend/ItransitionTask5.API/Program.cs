@@ -14,13 +14,15 @@ Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration;
+var frontendUrl = builder.Configuration["FRONTEND_URL"] ?? "http://localhost:3000";
 
-// resourse sharing (CORS) for frontend
+// resource sharing (CORS) for frontend
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5173")
+        policy.WithOrigins(
+            "http://localhost:5173", frontendUrl )
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -28,11 +30,8 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddControllers();
-
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
-
 
 // Configuration for PostgreSQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -42,6 +41,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 builder.Services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
 builder.Services.Configure<SendGridSettings>(configuration.GetSection("SendGridSettings"));
+
 var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -60,7 +60,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// ItransitionTask5.Application services
+// Application services
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IUserRepository, UsersRepository>();
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -77,18 +77,27 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-
 app.UseHttpsRedirection();
-// resource sharing
 app.UseCors("AllowFrontend");
-
-// Authentication and Authorization
 app.UseAuthentication();
 app.UseAuthorization();
-
-// Middleware
 app.UseMiddleware<UserStatusMiddleware>();
-
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+    try
+    {
+        Console.WriteLine("⏳ Applying pending migrations...");
+        db.Database.Migrate();
+        Console.WriteLine("✅ Database migrated successfully!");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Migration failed: {ex.Message}");
+    }
+}
 
 app.Run();
